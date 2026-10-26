@@ -1,5 +1,5 @@
 fastapi
 uvicorn
-boto3
+anthropic
 PyPDF2
 python-multipart

@@ -14,6 +14,7 @@ The application allows users to upload PDF or text documents, extracts the docum
 * Generate AI-powered summaries using Amazon Bedrock
 * Return concise summaries through FastAPI endpoints
 * Supports cloud-based AI inference using foundation models
+* Automated tests that run on every push through GitHub Actions
 
 ## Architecture
 
@@ -59,6 +60,11 @@ Amazon S3       Document Processing
 ### Document Processing
 
 * PyPDF2
+
+### Testing and CI
+
+* Pytest
+* GitHub Actions
 
 ## API Endpoints
 
@@ -107,7 +113,7 @@ git clone https://github.com/sahithi20102000/ai-document-summarizer.git
 ### Install Dependencies
 
 ```bash
-pip install fastapi uvicorn boto3 PyPDF2 python-multipart
+pip install -r requirements-dev.txt
 ```
 
 ### Configure AWS Credentials
@@ -137,12 +143,25 @@ The API will run at:
 http://localhost:8000
 ```
 
+## Running Tests
+
+```bash
+pytest -v
+```
+
+The tests mock AWS, so no credentials are needed. They cover the health check, text extraction for text and PDF files, the request sent to Bedrock, and the `/summarize` endpoint. They run automatically on every push through GitHub Actions.
+
+One test is marked as an expected failure: the app does not yet handle Bedrock errors cleanly. It will start passing once that error handling is added.
+
 ## Project Structure
 
 ```
 ai-document-summarizer/
 |
+├── .github/workflows/ci.yml
 ├── main.py
+├── test_main.py
+├── requirements-dev.txt
 ├── README.md
 └── .gitignore
 ```
@@ -155,6 +174,7 @@ ai-document-summarizer/
 * Integrated Amazon Bedrock for Generative AI summarization
 * Developed REST API endpoints for document processing
 * Designed prompt-based summarization workflow using Claude models
+* Wrote automated Pytest tests with mocked AWS services and a GitHub Actions workflow
 
 ## Future Improvements
 
@@ -163,6 +183,7 @@ ai-document-summarizer/
 * Add support for additional document formats
 * Deploy using AWS Lambda and API Gateway
 * Add document history and summary storage
+* Handle Bedrock and S3 errors with clear API error responses
 
 ## Author
 

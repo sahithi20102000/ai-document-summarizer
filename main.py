@@ -1,8 +1,10 @@
 import io
+import os
 
 import anthropic
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 from PyPDF2 import PdfReader
 
 app = FastAPI(title="AI Document Summarizer")
@@ -43,6 +45,11 @@ PAGE = """<!doctype html>
   form { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
   label { font-weight: 600; font-size: 15px; }
   input[type=file] { font: inherit; color: var(--fg); max-width: 100%; }
+  textarea {
+    font: inherit; color: var(--fg); background: var(--bg); width: 100%; min-height: 140px;
+    border: 1px solid var(--line); border-radius: 6px; padding: 12px; resize: vertical;
+  }
+  .or { font-size: 14px; color: var(--muted); margin: 0; }
   button {
     font: inherit; font-weight: 600; min-height: 46px; padding: 0 20px; border-radius: 6px;
     border: 1px solid var(--fg); background: var(--fg); color: var(--bg); cursor: pointer; align-self: flex-start;
@@ -67,10 +74,13 @@ PAGE = """<!doctype html>
   <p class="lead">Upload a PDF or a text file and get a short executive summary in a few bullet points.</p>
 
   <form id="form">
-    <label for="file">Choose a file</label>
-    <input id="file" name="file" type="file" accept=".pdf,.txt,.md,text/plain,application/pdf" required>
+    <label for="file">Upload a PDF or text file</label>
+    <input id="file" name="file" type="file" accept=".pdf,.txt,.md,text/plain,application/pdf">
+    <p class="or">or</p>
+    <label for="text">Paste text</label>
+    <textarea id="text" name="text" placeholder="Paste the text you want summarized"></textarea>
     <button id="go" type="submit">Summarize</button>
-    <p class="hint">PDF or text, up to 4 MB. Scanned PDFs with no selectable text can't be read.</p>
+    <p class="hint">Files up to 4 MB. If you choose a file and paste text, the file is used. Scanned PDFs with no selectable text can't be read.</p>
   </form>
 
   <p id="error" role="alert" hidden></p>
@@ -86,6 +96,7 @@ PAGE = """<!doctype html>
 <script>
   var form = document.getElementById("form");
   var fileInput = document.getElementById("file");
+  var textInput = document.getElementById("text");
   var go = document.getElementById("go");
   var errorEl = document.getElementById("error");
   var result = document.getElementById("result");
@@ -101,18 +112,29 @@ PAGE = """<!doctype html>
   form.addEventListener("submit", function (e) {
     e.preventDefault();
     var file = fileInput.files[0];
-    if (!file) { showError("Choose a file first."); return; }
-    if (file.size > 4 * 1024 * 1024) { showError("That file is over 4 MB. Choose a smaller one."); return; }
+    var pasted = textInput.value.trim();
+    if (!file && !pasted) { showError("Choose a file or paste some text first."); return; }
+    if (file && file.size > 4 * 1024 * 1024) { showError("That file is over 4 MB. Choose a smaller one."); return; }
 
     errorEl.hidden = true;
     result.hidden = true;
     go.disabled = true;
     go.textContent = "Summarizing...";
 
-    var data = new FormData();
-    data.append("file", file);
+    var request;
+    if (file) {
+      var data = new FormData();
+      data.append("file", file);
+      request = fetch("/summarize", { method: "POST", body: data });
+    } else {
+      request = fetch("/summarize-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: pasted })
+      });
+    }
 
-    fetch("/summarize", { method: "POST", body: data })
+    request
       .then(function (res) {
         return res.json().catch(function () { return {}; }).then(function (body) {
           if (!res.ok) { throw new Error(body.detail || "Something went wrong. Try again."); }
@@ -148,6 +170,11 @@ def extract_text(file_bytes, filename):
 
 
 def summarize(text):
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise HTTPException(
+            status_code=500,
+            detail="The server has no ANTHROPIC_API_KEY. Add it in Vercel under Settings, Environment Variables, then redeploy.",
+        )
     prompt = f"""You are a document summarizer.
 Generate a concise executive summary in 3 to 5 bullet points.
 Document:
@@ -179,6 +206,21 @@ async def summarize_document(file: UploadFile = File(...)):
     except anthropic.APIError as e:
         raise HTTPException(status_code=502, detail=f"AI service error: {e}")
     return {"filename": file.filename, "summary": summary}
+
+
+class TextIn(BaseModel):
+    text: str
+
+
+@app.post("/summarize-text")
+def summarize_pasted_text(body: TextIn):
+    if not body.text.strip():
+        raise HTTPException(status_code=400, detail="Paste some text first.")
+    try:
+        summary = summarize(body.text)
+    except anthropic.APIError as e:
+        raise HTTPException(status_code=502, detail=f"AI service error: {e}")
+    return {"filename": "Pasted text", "summary": summary}
 
 
 @app.get("/", response_class=HTMLResponse)

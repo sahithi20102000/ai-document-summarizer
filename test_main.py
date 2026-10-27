@@ -9,8 +9,16 @@ import main  # noqa: E402
 client = TestClient(main.app)
 
 
-def test_root():
+def test_home_page_is_served():
     response = client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "AI Document" in response.text
+    assert 'id="form"' in response.text
+
+
+def test_health():
+    response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"message": "AI Document Summarizer is running"}
 
@@ -26,6 +34,11 @@ def test_summarize_text_file(monkeypatch):
 
 def test_empty_file_is_rejected():
     response = client.post("/summarize", files={"file": ("empty.txt", b"   ")})
+    assert response.status_code == 400
+
+
+def test_unreadable_pdf_is_rejected():
+    response = client.post("/summarize", files={"file": ("broken.pdf", b"not a real pdf")})
     assert response.status_code == 400
 
 

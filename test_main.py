@@ -46,3 +46,22 @@ def test_large_file_is_rejected():
     big = b"a" * (main.MAX_FILE_BYTES + 1)
     response = client.post("/summarize", files={"file": ("big.txt", big)})
     assert response.status_code == 413
+
+
+def test_summarize_pasted_text(monkeypatch):
+    monkeypatch.setattr(main, "summarize", lambda text: "- pasted summary")
+    response = client.post("/summarize-text", json={"text": "Some pasted words."})
+    assert response.status_code == 200
+    assert response.json() == {"filename": "Pasted text", "summary": "- pasted summary"}
+
+
+def test_empty_pasted_text_is_rejected():
+    response = client.post("/summarize-text", json={"text": "   "})
+    assert response.status_code == 400
+
+
+def test_missing_api_key_gives_clear_error(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    response = client.post("/summarize-text", json={"text": "Some words."})
+    assert response.status_code == 500
+    assert "ANTHROPIC_API_KEY" in response.json()["detail"]
